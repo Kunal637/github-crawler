@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.env
+repositories_dump.csv

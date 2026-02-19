@@ -1,0 +1,73 @@
+name: Crawl GitHub Stars
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '0 0 * * *' # Run daily at midnight UTC
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    
+    # 1. A postgres service container
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: github_crawler
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Setup & dependency installs
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+
+      # 3. Setup Postgres Schema (Our app does this automatically on run, but requirement explicitly asks for a step)
+      - name: Setup Database Schema
+        env:
+          PGPASSWORD: password
+        run: |
+          # The app handles schema initialization via `await this.store.initializeSchema()`.
+          # We can just verify connection and explicitly run a small script to fulfill step 3 perfectly.
+          echo "CREATE TABLE IF NOT EXISTS repositories (id VARCHAR(255) PRIMARY KEY, name_with_owner VARCHAR(255) NOT NULL, stars INTEGER NOT NULL, metadata JSONB DEFAULT '{}'::jsonb, updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP); CREATE INDEX IF NOT EXISTS idx_repo_stars ON repositories (stars DESC);" > schema.sql
+          psql -h localhost -U postgres -d github_crawler -f schema.sql
+
+      # 4. Crawl Stars Step
+      - name: Crawl Stars
+        env:
+          # 6. Default GitHub Token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PG_CONNECTION_STRING: postgres://postgres:password@localhost:5432/github_crawler
+        run: |
+          npm start
+
+      # 5. Dump the contents & upload as artifact
+      - name: Dump Database to CSV
+        env:
+          PGPASSWORD: password
+        run: |
+          psql -h localhost -U postgres -d github_crawler -c "\copy (SELECT id, name_with_owner, stars FROM repositories ORDER BY stars DESC) TO 'repositories_dump.csv' WITH CSV HEADER;"
+
+      - name: Upload Crawl Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-repositories-stars
+          path: repositories_dump.csv
+          retention-days: 7
