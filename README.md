@@ -8,6 +8,7 @@ This project strictly adheres to **Clean Architecture**:
 - **Domain:** Immutable `Repository` entities, and interfaces for `GithubClient` and `RepositoryStore`.
 - **Use Cases:** The `CrawlStars` orchestrator encapsulates the business rules of partitioning GraphQL queries to bypass the 1,000 node search limit.
 - **Infrastructure:** Implements the aforementioned interfaces using `node-fetch` and `pg`. It properly manages API rate limits, backoffs, and connects to a PostgreSQL database via `UPSERT` queries for idempotency.
+- **Performance:** Incorporates dynamic date window algorithm scaling up to 4x chunks to blaze through sparse pagination bounds without hitting GraphQL limits.
 
 ## Prerequisites
 - Node.js 18+
