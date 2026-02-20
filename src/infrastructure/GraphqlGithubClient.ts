@@ -38,8 +38,8 @@ export class GraphqlGithubClient implements GithubClient {
 
             if (!response.ok) {
                 if (retries > 0) {
-                    console.warn(`[GitHub] Error ${response.status}. Retrying in 5s...`);
-                    await this.sleep(5000);
+                    console.warn(`[GitHub] Error ${response.status}. Retrying in 1s...`);
+                    await this.sleep(1000);
                     return this.executeQuery(query, variables, retries - 1);
                 }
                 throw new Error(`GitHub API Error: ${response.statusText} - ${await response.text()}`);
@@ -48,8 +48,8 @@ export class GraphqlGithubClient implements GithubClient {
             const json = await response.json() as any;
             if (json.errors) {
                 if (retries > 0 && json.errors.some((e: any) => e.type === 'RATE_LIMITED' || e.message.includes('timeout'))) {
-                    console.warn(`[GitHub] GraphQL Error (Rate Limited/Timeout). Retrying in 5s...`);
-                    await this.sleep(5000);
+                    console.warn(`[GitHub] GraphQL Error (Rate Limited/Timeout). Retrying in 1s...`);
+                    await this.sleep(1000);
                     return this.executeQuery(query, variables, retries - 1);
                 }
                 throw new Error(`GraphQL Error: ${JSON.stringify(json.errors)}`);
@@ -58,8 +58,8 @@ export class GraphqlGithubClient implements GithubClient {
             return json.data;
         } catch (error) {
             if (retries > 0) {
-                console.warn(`[GitHub] Network Error: ${error}. Retrying in 5s...`);
-                await this.sleep(5000);
+                console.warn(`[GitHub] Network Error: ${error}. Retrying in 1s...`);
+                await this.sleep(1000);
                 return this.executeQuery(query, variables, retries - 1);
             }
             throw error;
