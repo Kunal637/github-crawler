@@ -27,7 +27,8 @@ export class CrawlStars {
         // For recent years, smaller chunks. We'll stick to a simple 30-day sliding window for simplicity,
         // reducing window size if a chunk hits > 1000 results.
 
-        let chunkDays = 6; // Start with 6 days window to minimize 1000-node search limit bumps
+        let chunkDays = 30; // Start with a safe 30 days window
+        let maxConcurrency = 5;
 
         console.log(`Starting crawl to collect ${targetCount} repositories...`);
 
@@ -48,19 +49,21 @@ export class CrawlStars {
 
             console.log(`Crawling date range: ${fromStr} to ${toStr}... (Target: ${targetCount - totalCrawled} more)`);
 
+            // Fetch concurrently up to 10 pages in the 1000 node limit (10 pages * 100 nodes)
             while (hasNextPage && totalCrawled < targetCount) {
                 try {
+                    // Try to fetch several pages in parallel by predicting cursors if possible, 
+                    // but GraphQL cursor pagination doesn't allow offset parallelization easily.
+                    // Instead we will just aggressively fetch sequentially but offload DB savings completely.
                     const limit = Math.min(100, targetCount - totalCrawled);
                     const result = await this.client.fetchRepositoriesByDateRange(fromStr, toStr, cursor || undefined, limit);
 
                     if (result.repositories.length > 0) {
-                        // Don't await the save here to not block the network loop immediately
                         this.store.saveBatch(result.repositories).catch(err => console.error(err));
                         totalCrawled += result.repositories.length;
                         chunkCrawled += result.repositories.length;
 
-                        // Only log every 10k to prevent spam
-                        if (totalCrawled % 10000 === 0 || totalCrawled >= targetCount) {
+                        if (totalCrawled % 5000 === 0 || totalCrawled >= targetCount) {
                             console.log(`Saved ${result.repositories.length} repos. Total so far: ${totalCrawled}/${targetCount}`);
                         }
                     }
@@ -68,34 +71,30 @@ export class CrawlStars {
                     cursor = result.nextCursor;
                     hasNextPage = cursor !== null;
 
-                    // The max nodes we can get is 1000 per search query. Break out if we exhaust the page.
                     if (chunkCrawled >= 1000) {
                         console.log(`Hit 1,000 nodes limit for date partition ${fromStr} to ${toStr}. Shrinking window...`);
-
-                        // Rollback what we counted for this chunk, since we're going to shrink the window and re-crawl this start date
                         totalCrawled -= chunkCrawled;
-
-                        // We will slice the date window next.
                         break;
                     }
 
                 } catch (error) {
                     console.error(`Error during crawl iteration: ${error}`);
-                    // Simply retry logic or break loop depending on error severity handled in client
                     break;
                 }
             }
 
-            // Adjust window size for next iteration based on density
+            // aggressive sizing based on density
             if (chunkCrawled >= 1000) {
-                chunkDays = Math.max(1, Math.floor(chunkDays / 2)); // Shrink window
-            } else if (chunkCrawled < 500) {
-                chunkDays = Math.min(60, chunkDays + 2); // Grow window slowly
-                currentDate = nextDate; // Move forward fully
-                currentDate.setDate(currentDate.getDate() + 1); // Avoid overlap boundary
+                chunkDays = Math.max(1, Math.floor(chunkDays / 2));
             } else {
+                // If we got under 1000, we successfully cleared the entire window!
+                // We should scale the window up aggressively to minimize HTTP round trips 
+                // returning < 100 items.
+                if (chunkCrawled < 100) chunkDays = Math.min(365, chunkDays * 4);
+                else if (chunkCrawled < 500) chunkDays = Math.min(100, chunkDays * 2);
+
                 currentDate = nextDate;
-                currentDate.setDate(currentDate.getDate() + 1); // Avoid overlap boundary
+                currentDate.setDate(currentDate.getDate() + 1);
             }
         }
 
