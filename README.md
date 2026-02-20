@@ -33,5 +33,3 @@ This project strictly adheres to **Clean Architecture**:
    npm start
    ```
 
-## Theoretical Explanations
-See `ANSWERS.md` for explanations regarding scaling to 500M repositories and optimizing the database schema for future highly dynamic metadata (PRs, Issues, CI Checks).
